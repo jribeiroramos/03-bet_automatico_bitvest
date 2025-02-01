@@ -1,9 +1,9 @@
-# apostas.py
 import requests
 from datetime import datetime, timedelta
 from decimal import Decimal
 import time
 import random
+import os
 
 class PlaceBetObj:
     def __init__(self, amount, chance, high, guid):
@@ -77,6 +77,7 @@ def login_bitvest(username, password):
         currency = "tokens"
         balance = float(tmpblogin['data'].get('token-balance', '0').replace(',', ''))
         return session, secret, session_token, currency, user_seed, balance
+
     else:
         return None, None, None, None, None, None
 
@@ -95,45 +96,32 @@ def get_saldo_atual(session, secret, session_token, currency):
     except:
         return 0.0
 
-def estrategia_padrao(session, secret, session_token, currency, user_seed, saldo_inicial, emit_update):
+def estrategia_padrao(session, secret, session_token, currency, user_seed, saldo_inicial):
+    """Implementação da estratégia principal com:
+       - Parada ao ganhar 1% ou perder 10% do saldo inicial.
+       - Gatilho para aposta única definido por 'n' (aleatório entre 4 e 8) que é redefinido após cada vitória na aposta única.
     """
-    Estratégia de apostas:
-      - Para cada aposta, atualiza estatísticas:
-          - saldo_inicial, saldo_atual, variação (%),
-          - contagem de rolls >49.5 (roll_acima) e <=49.5 (roll_abaixo)
-      - Emite atualizações via 'emit_update' (callback passado pelo app)
-    """
+    
     sequencia = []
     relatorio_timer = datetime.now() + timedelta(hours=1)
     aposta_count = 0
-    n = random.randint(4, 8)  # gatilho para aposta única
-
-    # Contadores para os gráficos
-    roll_acima = 0
-    roll_abaixo = 0
+    n = random.randint(4, 8)  # Define o gatilho inicial para a aposta única, entre 4 e 8 apostas consecutivas iguais.
 
     while True:
         saldo_atual_float = get_saldo_atual(session, secret, session_token, currency)
         saldo_atual = Decimal(str(saldo_atual_float))
         
-        # Paradas: ganho de 1% ou perda de 10%
-        if saldo_atual >= saldo_inicial * Decimal('1.03'):
-            emit_update(f"Saldo +3% atingido: {saldo_atual}. Encerrando.", {
-                "saldo_inicial": float(saldo_inicial),
-                "saldo_atual": float(saldo_atual),
-                "variacao": float(((saldo_atual - saldo_inicial) / saldo_inicial) * 100)
-            })
+        # Condição de parada: ganho de 1% (saldo >= 101% do inicial)
+        if saldo_atual >= saldo_inicial * Decimal('1.01'):
+            print("Saldo atual atingiu +1% do saldo inicial. Encerrando o loop.")
             break
         
+        # Condição de parada: perda de 10% (saldo <= 90% do inicial)
         if saldo_atual <= saldo_inicial * Decimal('0.90'):
-            emit_update(f"Saldo -10% atingido: {saldo_atual}. Encerrando.", {
-                "saldo_inicial": float(saldo_inicial),
-                "saldo_atual": float(saldo_atual),
-                "variacao": float(((saldo_atual - saldo_inicial) / saldo_inicial) * 100)
-            })
+            print("Saldo atual caiu abaixo de 90% do saldo inicial (perda de 10%). Encerrando o loop.")
             break
 
-        # Aposta padrão
+        # Executa a aposta padrão
         bet_obj = PlaceBetObj(
             amount=Decimal('1'),
             chance=Decimal('97'),
@@ -144,26 +132,31 @@ def estrategia_padrao(session, secret, session_token, currency, user_seed, saldo
         
         if roll is not None:
             ganhou = (bet_obj.High and roll > 49.5) or (not bet_obj.High and roll <= 49.5)
-            mensagem = f"Apostado: {bet_obj.Amount}, Roll: {roll:.4f}, Resultado: {'WIN' if ganhou else 'LOSE'}"
-            # Atualiza os contadores para o gráfico
+
+            with open("numeros.txt", "a") as file:
+                file.write(f"{roll}\n")
+
+            variacao_atual = ((saldo_atual - saldo_inicial) / saldo_inicial) * 100
+
+            print(f"Apostado: {bet_obj.Amount}, Roll: {roll:.4f}, Resultado: {'WIN' if ganhou else 'LOSE'}, Variação: {variacao_atual:.2f}%")
+
+            # Atualiza a sequência com base no resultado do roll
             if roll > 49.5:
-                roll_acima += 1
                 sequencia.append("high")
             else:
-                roll_abaixo += 1
                 sequencia.append("low")
-            
+
             if len(sequencia) > 50:
                 sequencia.pop(0)
-            
-            # Verifica gatilho para aposta única
+
+            # Verifica se a sequência acumulada alcançou o tamanho 'n'
             if len(sequencia) >= n:
                 recorte = sequencia[-n:]
                 if all(x == "high" for x in recorte) or all(x == "low" for x in recorte):
                     ultima_aposta = recorte[-1]
                     aposta_unica_tipo = (ultima_aposta == "low")
                     aposta_unica_valor = saldo_atual * Decimal('0.005')
-                    
+
                     while True:
                         aposta_unica = PlaceBetObj(
                             amount=aposta_unica_valor,
@@ -174,101 +167,40 @@ def estrategia_padrao(session, secret, session_token, currency, user_seed, saldo
                         roll_unico = place_bet(session, aposta_unica, user_seed, currency, secret, session_token, Decimal('99.99'))
                         if roll_unico is not None:
                             ganhou_unica = (aposta_unica.High and roll_unico > 49.5) or (not aposta_unica.High and roll_unico <= 49.5)
-                            mensagem_unica = f"Aposta Única: {aposta_unica.Amount}, Roll: {roll_unico:.4f}, Resultado: {'WIN' if ganhou_unica else 'LOSE'}"
-                            emit_update(mensagem_unica)
-                            
+
+                            with open("numeros.txt", "a") as file:
+                                file.write(f"{roll_unico}\n")
+
+                            saldo_atual_float = get_saldo_atual(session, secret, session_token, currency)
+                            saldo_atual = Decimal(str(saldo_atual_float))
+                            variacao_atual = ((saldo_atual - saldo_inicial) / saldo_inicial) * 100
+
+                            print(f"Apostado: {aposta_unica.Amount}, Roll: {roll_unico:.4f}, Resultado: {'WIN' if ganhou_unica else 'LOSE'}, Variação: {variacao_atual:.2f}%")
+
+                            # Se ganhar a aposta única, sai do loop e redefine 'n'
                             if ganhou_unica:
-                                n = random.randint(4, 8)  # redefine o gatilho
+                                n = random.randint(4, 8)  # Redefine 'n' para um novo valor aleatório entre 4 e 8
                                 break
                             else:
                                 aposta_unica_valor *= 2
-                    sequencia.clear()
-            
-            aposta_count += 1
 
-            # Atualiza estatísticas para o dashboard
-            variacao = ((saldo_atual - saldo_inicial) / saldo_inicial) * 100
-            stats = {
-                "saldo_inicial": float(saldo_inicial),
-                "saldo_atual": float(saldo_atual),
-                "variacao": float(variacao),
-                "roll_acima": roll_acima,
-                "roll_abaixo": roll_abaixo,
-                "aposta_count": aposta_count
-            }
-            emit_update(f"captchas realizadas: {aposta_count} | Saldo atual: {saldo_atual}", stats)
-        
-        time.sleep(random.uniform(0.5, 3.0))
-        
+                    # Limpa a sequência para evitar múltiplos gatilhos consecutivos
+                    sequencia.clear()
+
+        aposta_count += 1
+        time.sleep(random.uniform(0.5, 3.0))  # Intervalo aleatório entre apostas
+
         if datetime.now() >= relatorio_timer:
             variacao = ((saldo_atual - saldo_inicial) / saldo_inicial) * 100
-            emit_update(f"[Relatório] Saldo: {saldo_atual}, Apostas: {aposta_count}", {
-                "saldo_inicial": float(saldo_inicial),
-                "saldo_atual": float(saldo_atual),
-                "variacao": float(variacao)
-            })
+            print(f"[Relatório] Saldo: {saldo_atual:.2f}, Variação: {variacao:.2f}%, Apostas: {aposta_count}")
             relatorio_timer = datetime.now() + timedelta(hours=1)
-def progressive_apostas(resultados):
-    """
-    Simula uma sequência de apostas usando uma estratégia de progressão (Martingale)
-    com base em um array (lista) de resultados.
 
-    Parâmetros:
-      resultados (list): Lista de 10 valores inteiros (0 ou 1), onde:
-                          0 => perda, 1 => vitória.
-
-    Lógica:
-      - Inicia com uma aposta de 1.
-      - Se o resultado for 1 (vitória), assume-se um lucro igual ao valor apostado
-        (e a aposta é reiniciada para 1).
-      - Se o resultado for 0 (perda), a aposta é perdida e para a próxima rodada
-        o valor a apostar é dobrado.
-    
-    Retorna:
-      Uma lista de dicionários, cada um contendo:
-        - 'round': número da rodada (1 a 10)
-        - 'outcome': o resultado da rodada (0 ou 1)
-        - 'bet': valor apostado nessa rodada
-        - 'profit': lucro (positivo) ou prejuízo (negativo) nessa rodada
-        - 'cumulative_profit': lucro acumulado até aquela rodada
-    """
-    bet = 1
-    cumulative_profit = 0
-    simulacao = []
-    
-    for i, resultado in enumerate(resultados):
-        if resultado == 1:
-            # Vitória: ganha um valor igual à aposta; reinicia a aposta para 1
-            profit = bet
-            cumulative_profit += profit
-            simulacao.append({
-                "round": i + 1,
-                "outcome": resultado,
-                "bet": bet,
-                "profit": profit,
-                "cumulative_profit": cumulative_profit
-            })
-            bet = 1  # reinicia a aposta
-        else:
-            # Perda: perde o valor apostado; dobra a aposta para a próxima rodada
-            profit = -bet
-            cumulative_profit += profit
-            simulacao.append({
-                "round": i + 1,
-                "outcome": resultado,
-                "bet": bet,
-                "profit": profit,
-                "cumulative_profit": cumulative_profit
-            })
-            bet *= 2  # dobra a aposta
-    
-    return simulacao
-
+# Início do programa
 if __name__ == '__main__':
-    # Execução para testes locais (não será chamada se importado pelo app.py)
     session, secret, session_token, currency, user_seed, balance_inicial = login_bitvest("santos01", "Lorota15!")
+
     if session and secret and session_token and currency and user_seed:
-        estrategia_padrao(session, secret, session_token, currency, user_seed, Decimal(str(balance_inicial)), print)
+        estrategia_padrao(session, secret, session_token, currency, user_seed, Decimal(str(balance_inicial)))
     else:
         print("Falha na autenticação. Não foi possível iniciar o loop.")
 

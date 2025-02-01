@@ -1,0 +1,97 @@
+<!-- statistics.html -->
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <title>Estatísticas - Apostas Interativas</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <!-- Inclua Socket.IO -->
+  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+</head>
+<body class="container">
+  <h2 class="mt-5">Estatísticas dos Números</h2>
+  
+  <!-- Tabela com as principais estatísticas -->
+  <table class="table table-bordered">
+    <tr>
+      <th>Total de Valores</th>
+      <td id="total_valores">Carregando...</td>
+    </tr>
+    <tr>
+      <th>Média</th>
+      <td id="media">Carregando...</td>
+    </tr>
+    <tr>
+      <th>Mediana</th>
+      <td id="mediana">Carregando...</td>
+    </tr>
+    <tr>
+      <th>Desvio-Padrão</th>
+      <td id="desvio_padrao">Carregando...</td>
+    </tr>
+    <tr>
+      <th>% > 49.5</th>
+      <td id="perc_acima">Carregando...</td>
+    </tr>
+    <tr>
+      <th>% ≤ 49.5</th>
+      <td id="perc_abaixo_igual">Carregando...</td>
+    </tr>
+    <tr>
+      <th>Valor Mais Frequente</th>
+      <td id="valor_mais_frequente">Carregando...</td>
+    </tr>
+    <tr>
+      <th>Frequência</th>
+      <td id="freq_max">Carregando...</td>
+    </tr>
+  </table>
+  
+  <h4>Top 5 Menores</h4>
+  <ul id="top5_menores" class="list-group"></ul>
+  
+  <h4>Top 5 Maiores</h4>
+  <ul id="top5_maiores" class="list-group"></ul>
+  
+  <script>
+    document.addEventListener("DOMContentLoaded", function(){
+      var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+      
+      socket.on('update', function(data) {
+        // Atualiza os dados da análise dos números
+        if(data.analise_numeros !== undefined) {
+          document.getElementById("total_valores").textContent = data.analise_numeros.total_valores;
+          document.getElementById("media").textContent = parseFloat(data.analise_numeros.media).toFixed(4);
+          document.getElementById("mediana").textContent = parseFloat(data.analise_numeros.mediana).toFixed(4);
+          document.getElementById("desvio_padrao").textContent = parseFloat(data.analise_numeros.desvio_padrao).toFixed(4);
+          document.getElementById("perc_acima").textContent = parseFloat(data.analise_numeros.perc_acima).toFixed(2) + "%";
+          document.getElementById("perc_abaixo_igual").textContent = parseFloat(data.analise_numeros.perc_abaixo_igual).toFixed(2) + "%";
+          document.getElementById("valor_mais_frequente").textContent = data.analise_numeros.valor_mais_frequente;
+          document.getElementById("freq_max").textContent = data.analise_numeros.freq_max;
+          
+          // Atualiza lista dos Top 5 Menores
+          var top5MenoresElem = document.getElementById("top5_menores");
+          top5MenoresElem.innerHTML = "";
+          data.analise_numeros.top5_menores.forEach(function(item){
+            var li = document.createElement("li");
+            li.textContent = item[0] + " => " + item[1] + " ocorrências";
+            li.classList.add("list-group-item");
+            top5MenoresElem.appendChild(li);
+          });
+          
+          // Atualiza lista dos Top 5 Maiores
+          var top5MaioresElem = document.getElementById("top5_maiores");
+          top5MaioresElem.innerHTML = "";
+          data.analise_numeros.top5_maiores.forEach(function(item){
+            var li = document.createElement("li");
+            li.textContent = item[0] + " => " + item[1] + " ocorrências";
+            li.classList.add("list-group-item");
+            top5MaioresElem.appendChild(li);
+          });
+        }
+      });
+    });
+  </script>
+</body>
+</html>
+

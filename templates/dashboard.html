@@ -1,0 +1,143 @@
+<!-- dashboard.html -->
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <title>Dashboard - captchas Interativas</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <!-- Inclui Chart.js e Socket.IO -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+  <style>
+    .saldo-inicial { color: blue; }
+    .saldo-atual.positivo { color: green; }
+    .saldo-atual.negativo { color: red; }
+    .variacao.positivo { color: blue; }
+    .variacao.negativo { color: red; }
+    #saldo_position {
+      color: blue;
+      font-size: 24px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body class="container">
+  <h2 class="mt-5">Dashboard de captchas</h2>
+  
+  <div class="mb-3">
+    <p>Saldo Inicial: <span id="saldo_inicial" class="saldo-inicial">Carregando...</span></p>
+    <p>Saldo Atual: <span id="saldo_atual">Carregando...</span></p>
+    <p>Variação: <span id="variacao">Carregando...</span></p>
+  </div>
+  
+  <canvas id="barChart" width="400" height="200"></canvas>
+  
+  <div class="mt-3">
+    <p>Posição do Saldo na Escala: <span id="saldo_position">Carregando...</span></p>
+  </div>
+  
+  <div class="mt-3">
+    <h4>Logs</h4>
+    <ul id="logs" class="list-group">
+      <li class="list-group-item">Aguardando atualizações...</li>
+    </ul>
+  </div>
+  
+  <script>
+    document.addEventListener("DOMContentLoaded", function(){
+      var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+      
+      var ctx = document.getElementById('barChart').getContext('2d');
+      var barChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['Maior que 49.5', 'Menor ou Igual a 49.5'],
+          datasets: [{
+            label: 'Contagem de Rolls',
+            data: [0, 0],
+            backgroundColor: [
+              'rgba(0, 123, 255, 0.6)',
+              'rgba(220, 53, 69, 0.6)'
+            ]
+          }]
+        },
+        options: {
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { stepSize: 1 }
+            }
+          }
+        }
+      });
+      
+      socket.on('update', function(data) {
+        // Atualiza os logs
+        var logsList = document.getElementById("logs");
+        logsList.innerHTML = "";
+        data.logs.forEach(function(log){
+          var li = document.createElement("li");
+          li.textContent = log;
+          li.classList.add("list-group-item");
+          logsList.appendChild(li);
+        });
+        
+        // Atualiza saldo e variação
+        var saldoInicialElem = document.getElementById("saldo_inicial");
+        var saldoAtualElem = document.getElementById("saldo_atual");
+        var variacaoElem = document.getElementById("variacao");
+        
+        if(data.saldo_inicial !== undefined)
+          saldoInicialElem.textContent = data.saldo_inicial.toFixed(2);
+        if(data.saldo_atual !== undefined) {
+          saldoAtualElem.textContent = data.saldo_atual.toFixed(2);
+          if(data.saldo_atual > data.saldo_inicial) {
+            saldoAtualElem.classList.remove("negativo");
+            saldoAtualElem.classList.add("positivo");
+          } else {
+            saldoAtualElem.classList.remove("positivo");
+            saldoAtualElem.classList.add("negativo");
+          }
+        }
+        if(data.variacao !== undefined) {
+          variacaoElem.textContent = data.variacao.toFixed(2) + "%";
+          if(data.variacao >= 0) {
+            variacaoElem.classList.remove("negativo");
+            variacaoElem.classList.add("positivo");
+          } else {
+            variacaoElem.classList.remove("positivo");
+            variacaoElem.classList.add("negativo");
+          }
+        }
+        
+        // Atualiza o gráfico de barras
+        if(data.roll_acima !== undefined && data.roll_abaixo !== undefined) {
+          barChart.data.datasets[0].data = [data.roll_acima, data.roll_abaixo];
+          barChart.update();
+        }
+        
+        // Cálculo da posição na escala (de 2000 até 1 milhão, com incremento de 1% por degrau)
+        var scale = [];
+        var val = 2000;
+        while(val < 1000000) {
+          scale.push(val);
+          val *= 1.01;
+        }
+        var currentBalance = data.saldo_atual || 0;
+        var position = 0;
+        for(var i = 0; i < scale.length; i++){
+          if(currentBalance < scale[i]){
+            position = i;
+            break;
+          }
+        }
+        if(currentBalance >= scale[scale.length - 1])
+          position = scale.length;
+        var saldoPositionElem = document.getElementById("saldo_position");
+        saldoPositionElem.textContent = "Seu saldo está no degrau " + (position + 1) + " de " + scale.length + " (valor aproximado: " + scale[position].toFixed(2) + ")";
+      });
+    });
+  </script>
+</body>
+</html>
+
