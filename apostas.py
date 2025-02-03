@@ -117,7 +117,7 @@ def estrategia_padrao(session, secret, session_token, currency, user_seed, saldo
         saldo_atual = Decimal(str(saldo_atual_float))
         
         # Paradas: ganho de 1% ou perda de 10%
-        if saldo_atual >= saldo_inicial * Decimal('1.03'):
+        if saldo_atual >= saldo_inicial * Decimal('2.85'):
             emit_update(f"Saldo +3% atingido: {saldo_atual}. Encerrando.", {
                 "saldo_inicial": float(saldo_inicial),
                 "saldo_atual": float(saldo_atual),
